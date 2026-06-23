@@ -4,6 +4,8 @@
 run_infrastructure_readiness_check() {
     echo "Running infrastructure readiness check..."
     echo "This will verify system compatibility and infrastructure requirements."
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
         
     if [ ! -f "$HOMEDIR/inventory/hosts.yaml" ]; then
         echo -e "${RED}Error: Inventory file not found at $HOMEDIR/inventory/hosts.yaml${NC}"

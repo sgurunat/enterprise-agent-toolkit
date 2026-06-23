@@ -46,10 +46,6 @@ DATAPREP_REDIS_PASSWORD=$(generate_password 20)
 PGVECTOR_PASSWORD=$(generate_password 20)
 PGVECTOR_POSTGRES_PASSWORD=$(generate_password 20)
 
-# Coding Agent Plugin Credentials
-# Separate token for DevUI browser login — NOT the LiteLLM master key.
-CODING_AGENT_DEVUI_TOKEN="devui-$(generate_hex_key 16)"
-
 # Generate connection strings
 DATABASE_URL="postgresql://admin:${POSTGRESQL_PASSWORD}@genai-gateway-postgresql:5432/litellm"
 CLICKHOUSE_REDIS_URL="redis://default:${CLICKHOUSE_PASSWORD}@genai-gateway-trace-valkey-primary:6379/0"
@@ -96,11 +92,6 @@ dataprep_redis_password: "$DATAPREP_REDIS_PASSWORD"
 pgvector_password: "$PGVECTOR_PASSWORD"
 pgvector_postgres_password: "$PGVECTOR_POSTGRES_PASSWORD"
 
-# Coding Agent Plugin Secrets
-# coding_agent_api_key: LiteLLM master key — used only for backend API calls to GenAI Gateway.
-# coding_agent_devui_token: separate random token — used only for DevUI browser login.
-coding_agent_api_key: "$LITELLM_MASTER_KEY"
-coding_agent_devui_token: "$CODING_AGENT_DEVUI_TOKEN"
 EOF
 
 # Set appropriate permissions

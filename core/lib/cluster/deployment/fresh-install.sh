@@ -19,12 +19,12 @@ fresh_installation() {
 
     echo "Deployment configuration: $deploy_kubernetes_fresh"
 
-    if [[ "$deploy_kubernetes_fresh" == "no" && "$deploy_habana_ai_operator" == "no" && "$deploy_ingress_controller" == "no" && "$deploy_keycloak" == "no" && "$deploy_apisix" == "no" && "$deploy_llm_models" == "no" && "$deploy_observability" == "no" && "$deploy_genai_gateway" == "no" && "$deploy_istio" == "no" && "$deploy_ceph" == "no" && "$uninstall_ceph" == "no"  && "$deploy_nri_balloon_policy" == "no" && "$deploy_agenticai_plugin" == "no" && "$deploy_finetune_plugin" == "no" && "$deploy_redis" == "no" && "$deploy_pgvector" == "no" && "$deploy_coding_agent" == "no" ]]; then
+    if [[  "$deploy_kubernetes_fresh" == "no" && "$deploy_ingress_controller" == "no" && "$deploy_keycloak" == "no" && "$deploy_apisix" == "no" && "$deploy_llm_models" == "no" && "$deploy_observability" == "no" && "$deploy_genai_gateway" == "no" && "$deploy_istio" == "no" && "$deploy_ceph" == "no" && "$uninstall_ceph" == "no"  && "$deploy_nri_balloon_policy" == "no" && "$deploy_agenticai_plugin" == "no" && "$deploy_finetune_plugin" == "no" && "$deploy_redis" == "no" && "$deploy_pgvector" == "no" && "${deploy_agent_sandbox:-no}" == "no" ]]; then
 
     # Check if all deployment steps are set to "no" after getting user input
         echo "No installation or deployment steps selected. Skipping setup_initial_env..."
         echo "--------------------------------------------------------------------"
-        echo "|     Deployment Skipped for Intel Agentic AI Stack!               |"
+        echo "|     Deployment Skipped for Intel AI for Enterprise Agent Toolkit!               |"
         echo "--------------------------------------------------------------------"
     else
         prompt_for_input
@@ -45,7 +45,7 @@ fresh_installation() {
             fi
 
             if [[ "$deploy_kubernetes_fresh" == "yes" ]]; then
-                echo "Starting fresh installation of Intel Agentic AI Stack..."
+                echo "Starting fresh installation of Intel AI for Enterprise Agent Toolkit..."
                 setup_kernel_and_containerd
                 install_kubernetes "$@"
             else
@@ -58,10 +58,10 @@ fresh_installation() {
             # Deploy NRI CPU Balloons for CPU deployments (after all infrastructure, before models)
             if [[ "$deploy_nri_balloon_policy" == "yes" ]]; then
                 # Ensure this is a CPU deployment
-                if [[ "$cpu_or_gpu" != "c" ]]; then
-                    echo "${RED}Error: NRI Balloon Policy can only be deployed for CPU deployments (cpu_or_gpu='c')${NC}"
-                    echo "${RED}Current cpu_or_gpu setting: '$cpu_or_gpu'${NC}"
-                    echo "${RED}Please set cpu_or_gpu to 'c' or disable NRI balloon policy deployment. Exiting!${NC}"
+                if [[ "$compute_platform" != "c" ]]; then
+                    echo "${RED}Error: NRI Balloon Policy can only be deployed for CPU deployments (cpu='c')${NC}"
+                    echo "${RED}Current compute_platform setting: '$compute_platform'${NC}"
+                    echo "${RED}Please set cpu to 'c' or disable NRI balloon policy deployment. Exiting!${NC}"
                     exit 1
                 fi
                 execute_and_check "Deploying CPU Optimization (NRI Balloons & Topology Detection)..." deploy_nri_balloons_playbook "$@" \
@@ -69,12 +69,6 @@ fresh_installation() {
                     "Failed to deploy CPU optimization. Exiting!."
             else
                 echo "Skipping CPU optimization deployment..."
-            fi
-            if [[ "$deploy_habana_ai_operator" == "yes" ]]; then
-                execute_and_check "Deploying habana-ai-operator..." run_deploy_habana_ai_operator_playbook "Habana AI Operator is deployed." \
-                    "Failed to deploy Habana AI Operator. Exiting."
-            else
-                echo "Skipping Habana AI Operator installation..."
             fi
 
             if [[ "$uninstall_ceph" == "yes" ]]; then
@@ -137,7 +131,7 @@ fresh_installation() {
             # Plugins are deployed after core infrastructure is ready
             
             if [[ "$deploy_agenticai_plugin" == "yes" ]]; then
-                echo "Deploying Agentic AI Plugin..."
+                echo "Deploying Agentic AI Plugin (Flowise)..."
                 ansible-playbook -i "${INVENTORY_PATH}" ../../plugins/agenticai/playbooks/deploy-agenticai-plugin.yml \
                     --extra-vars "cluster_url=${cluster_url} \
                                   cert_file=${cert_file} \
@@ -203,6 +197,14 @@ fresh_installation() {
                 echo "Skipping Standalone Redis deployment..."
             fi
 
+            if [[ "$deploy_kuberay" == "yes" ]]; then
+                execute_and_check "Deploying KubeRay Operator & Cluster..." deploy_kuberay_controller \
+                    "KubeRay Operator & Cluster deployed successfully." \
+                    "Failed to deploy KubeRay. Exiting!."
+            else
+                echo "Skipping KubeRay deployment..."
+            fi
+            
             if [[ "$deploy_pgvector" == "yes" ]]; then
                 execute_and_check "Deploying PostgreSQL + pgvector..." deploy_pgvector_controller \
                     "PostgreSQL + pgvector deployed successfully." \
@@ -211,12 +213,12 @@ fresh_installation() {
                 echo "Skipping PostgreSQL + pgvector deployment..."
             fi
 
-            if [[ "$deploy_coding_agent" == "yes" ]]; then
-                execute_and_check "Building and deploying Coding Agent..." deploy_coding_agent_controller \
-                    "Coding Agent is deployed successfully." \
-                    "Failed to deploy Coding Agent. Exiting!."
+            if [[ "${deploy_agent_sandbox:-no}" == "yes" ]]; then
+                execute_and_check "Deploying Agent Sandbox (CRD controller + sandbox-router)..." deploy_agent_sandbox_controller \
+                    "Agent Sandbox deployed successfully." \
+                    "Failed to deploy Agent Sandbox. Exiting!."
             else
-                echo "Skipping Coding Agent deployment..."
+                echo "Skipping Agent Sandbox deployment..."
             fi
 
 
@@ -250,7 +252,7 @@ fresh_installation() {
             fi
         else
             echo "-------------------------------------------------------------------"
-            echo "|     Deployment Skipped for Intel Agentic AI Stack!               |"
+            echo "|     Deployment Skipped for Intel AI for Enterprise Agent Toolkit!               |"
             echo "--------------------------------------------------------------------"
         fi
     fi

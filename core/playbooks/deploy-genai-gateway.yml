@@ -127,7 +127,7 @@
         {% if env_proxy.https_proxy | default('') != '' %}
         --set proxy.https_proxy="{{ env_proxy.https_proxy }}"
         {% endif %}
-        {% set _k8s_bypass = ".default,.genai-gateway,.redis,.coding-agent,.ingress-nginx" %}
+        {% set _k8s_bypass = ".default,.genai-gateway,.redis,.ingress-nginx" %}
         {% if env_proxy.no_proxy | default('') != '' %}
         --set proxy.no_proxy="{{ (env_proxy.no_proxy + ',' + _k8s_bypass) | replace(',', '\\,') }}"
         {% else %}

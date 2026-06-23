@@ -26,7 +26,6 @@
           - "Inference Model Deployment Configuration"
           - "==================================================================="
           - "CPU Deployment: {{ cpu_playbook }}"
-          - "GPU Deployment: {{ gpu_playbook }}"
           - "NRI CPU Balloons: {{ 'ENABLED' if cpu_playbook == 'true' else 'DISABLED' }}"
           - "Models to Deploy: {{ model_name_list }}"
       tags: always
@@ -103,52 +102,6 @@
           when: kubernetes_platform != "eks"
           run_once: true
           tags: always
-        - name: Use EKS-specific ingress configuration for TEI
-          ansible.builtin.copy:
-            src: "{{ remote_helm_charts_base }}/tei/templates/ingress_eks.yaml"
-            dest: "{{ remote_helm_charts_base }}/tei/templates/ingress.yaml"
-            mode: "0644"
-            remote_src: yes
-          when: kubernetes_platform == "eks"
-          run_once: true
-          tags: always
-        - name: Remove duplicate EKS ingress template for TEI
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/tei/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform == "eks"
-          run_once: true
-          tags: always
-        - name: Remove EKS ingress template for TEI when not on EKS
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/tei/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform != "eks"
-          run_once: true
-          tags: always
-        - name: Use EKS-specific ingress configuration for TEI Rerank
-          ansible.builtin.copy:
-            src: "{{ remote_helm_charts_base }}/teirerank/templates/ingress_eks.yaml"
-            dest: "{{ remote_helm_charts_base }}/teirerank/templates/ingress.yaml"
-            mode: "0644"
-            remote_src: yes
-          when: kubernetes_platform == "eks"
-          run_once: true
-          tags: always
-        - name: Remove duplicate EKS ingress template for TEI Rerank
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/teirerank/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform == "eks"
-          run_once: true
-          tags: always
-        - name: Remove EKS ingress template for TEI Rerank when not on EKS
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/teirerank/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform != "eks"
-          run_once: true
-          tags: always
         - name: Use EKS-specific ingress configuration for TGI
           ansible.builtin.copy:
             src: "{{ remote_helm_charts_base }}/tgi/templates/ingress_eks.yaml"
@@ -177,10 +130,6 @@
           ansible.builtin.shell: |
             echo "VLLM templates:"
             ls -la {{ remote_helm_charts_base }}/vllm/templates/ingress*.yaml || echo "No files found"
-            echo "TEI templates:"
-            ls -la {{ remote_helm_charts_base }}/tei/templates/ingress*.yaml || echo "No files found"
-            echo "TEI Rerank templates:"
-            ls -la {{ remote_helm_charts_base }}/teirerank/templates/ingress*.yaml || echo "No files found"
             echo "TGI templates:"
             ls -la {{ remote_helm_charts_base }}/tgi/templates/ingress*.yaml || echo "No files found"
           register: template_verification
@@ -199,34 +148,6 @@
         - name: Remove EKS ingress template for VLLM (OpenShift)
           ansible.builtin.file:
             path: "{{ remote_helm_charts_base }}/vllm/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform == "openshift"
-          run_once: true
-          tags: always
-        - name: Remove standard ingress template for TEI (OpenShift)
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/tei/templates/ingress.yaml"
-            state: absent
-          when: kubernetes_platform == "openshift"
-          run_once: true
-          tags: always
-        - name: Remove EKS ingress template for TEI (OpenShift)
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/tei/templates/ingress_eks.yaml"
-            state: absent
-          when: kubernetes_platform == "openshift"
-          run_once: true
-          tags: always
-        - name: Remove standard ingress template for TEI Rerank (OpenShift)
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/teirerank/templates/ingress.yaml"
-            state: absent
-          when: kubernetes_platform == "openshift"
-          run_once: true
-          tags: always
-        - name: Remove EKS ingress template for TEI Rerank (OpenShift)
-          ansible.builtin.file:
-            path: "{{ remote_helm_charts_base }}/teirerank/templates/ingress_eks.yaml"
             state: absent
           when: kubernetes_platform == "openshift"
           run_once: true
@@ -659,1327 +580,6 @@
         var: model_name_list
       tags: always
       run_once: true
-    - name: Deploy Llama8b LLM Model
-      block:
-        - name: Delete Ingress resource Llama8b from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-llama-8b-ingress
-            state: absent
-          tags: install-llama-8b
-        - name: Delete Ingress resource Llama8b from auth-apisix namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-llama-8b-ingress
-            state: absent
-          tags: install-llama-8b
-        - name: Deploy LLM model Llama8b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-llama-8b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="meta-llama/Llama-3.1-8B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-          tags: install-llama-8b
-        - name: Register Llama8b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "meta-llama/Llama-3.1-8B-Instruct"
-            reg_litellm_model: "openai/meta-llama/Llama-3.1-8B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-llama-8b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-llama-8b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-llama-8b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      when:
-        - model_name_list is defined
-        - "'llama-8b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - install_true == 'true'
-
-    - name: Check if vllm-llama-8b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama-8b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama-8b
-    - name: Uninstall vllm-llama-8b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama-8b"
-      run_once: true
-      tags: uninstall-llama-8b
-      when:
-        - "'llama-8b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy "{{ huggingface_model_id }}" LLM Model
-      block:
-        - name: Delete Ingress resource "{{ huggingface_model_id }}" from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: "{{huggingface_model_deployment_name}}-ingress"
-            state: absent
-          tags: "install-{{ huggingface_model_deployment_name }}"
-        - name: Delete Ingress resource "{{ huggingface_model_id }}" from auth-apisix namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: "{{huggingface_model_deployment_name}}-ingress"
-            state: absent
-          tags: "install-{{ huggingface_model_deployment_name }}"
-        - name: Deploy LLM model "{{ huggingface_model_id }}"
-          ansible.builtin.command: >-
-            helm upgrade --install "{{huggingface_model_deployment_name}}" "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="{{ huggingface_model_id }}"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if cpu_playbook == 'true' %}
-              --values {{ remote_helm_charts_base }}/vllm/xeon-values.yaml
-              --set cpu_balloon_annotation="vllm-balloon"
-              --set podLabels.name="vllm"
-              --set cpu="{{ optimal_balloon_config.workload_cpus | default(8) }}"
-              --set memory="{{ optimal_memory_gb | default(8) }}Gi"
-              --set tensor_parallel_size={{ optimal_balloon_config.tensor_parallel_size | default(1) }}
-              --set pipeline_parallel_size={{ optimal_balloon_config.pipeline_parallel_size | default(1) }}
-            {% elif gaudi_deployment|lower == "true" %}
-              --set tensor_parallel_size={{ huggingface_tensor_parellel_size }}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register "{{ huggingface_model_id }}" model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "{{ huggingface_model_id }}"
-            reg_litellm_model: "openai/{{ huggingface_model_id }}"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://{{huggingface_model_deployment_name}}-vllm-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - "install-{{ huggingface_model_deployment_name }}"
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-{{ huggingface_model_deployment_name }}' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: "install-{{ huggingface_model_deployment_name }}"
-      when:
-        - hugging_face_model_deployment == 'true'
-        - install_true == 'true'
-    - name: Check if "{{ hugging_face_model_remove_name }}" Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter {{ hugging_face_model_remove_name }} --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: "uninstall-{{ hugging_face_model_remove_name }}"
-    - name: Uninstall "{{ hugging_face_model_remove_name }}" Model
-      ansible.builtin.command:
-        cmd: "helm uninstall {{ hugging_face_model_remove_name }}"
-      run_once: true
-      tags: "uninstall-{{ hugging_face_model_remove_name }}"
-      when:
-        - uninstall_true == 'true'
-        - hugging_face_model_remove_deployment == 'true'
-        - helm_release_installed.stdout != ""
-
-
-
-    - name: Check if Llama4 Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama-4-scout-17b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama-4-scout-17b
-    - name: Uninstall vllm-llama-8b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama-4-scout-17b"
-      run_once: true
-      tags: uninstall-llama-4-scout-17b
-      when:
-        - "'llama-4-scout-17b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-
-    - name: Deploy Llama4-17B Scout LLM Model
-      block:
-        - name: Delete Ingress resource Llama4-17B from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-llama-4-scout-17b-ingress
-            state: absent
-          tags: install-llama-4-scout-17b
-        - name: Delete Ingress resource Llama4-17B from auth-apisix namespace
-          tags: install-llama-4-scout-17b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-llama-4-scout-17b-ingress
-            state: absent
-        - name: Deploy LLM model Llama 4 17B
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-llama-4-scout-17b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="meta-llama/Llama-4-Scout-17B-16E-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size=4
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register llama-4-scout-17b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-            reg_litellm_model: "openai/meta-llama/Llama-4-Scout-17B-16E-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-llama-4-scout-17b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-llama-4-scout-17b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-llama-4-scout-17b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-llama-4-scout-17b
-      when:
-        - '"llama-4-scout-17b" in model_name_list'
-        - install_true == 'true'
-
-
-
-    - name: Check if QWEN 2.5 3B Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-qwen-2-5-32b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-qwen-2-5-32b
-    - name: Uninstall QWEN 2.5 3B Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-qwen-2-5-32b"
-      run_once: true
-      tags: uninstall-qwen-2-5-32b
-      when:
-        - "'qwen-2-5-32b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Qwen-2.5-32B Scout LLM Model
-      block:
-        - name: Delete Ingress resource Qwen-2.5-32B from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-qwen-2-5-32b-ingress
-            state: absent
-          tags: install-qwen-2-5-32b
-        - name: Delete Ingress resource Qwen-2-5-32B from auth-apisix namespace
-          tags: install-qwen-2-5-32b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-qwen-2-5-32b-ingress
-            state: absent
-        - name: Deploy LLM model Qwen-2-5-32B
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-qwen-2-5-32b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="Qwen/Qwen2.5-32B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size=1
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Qwen2.5-32B model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "Qwen/Qwen2.5-32B-Instruct"
-            reg_litellm_model: "openai/Qwen/Qwen2.5-32B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-qwen-2-5-32b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-qwen-2-5-32b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-qwen-2-5-32b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-qwen-2-5-32b
-      when:
-        - '"qwen-2-5-32b" in model_name_list'
-        - install_true == 'true'
-
-    - name: Check if vllm-llama-70b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama-70b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama-70b
-    - name: Uninstall llama-70b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama-70b"
-      run_once: true
-      tags: uninstall-llama-70b
-      when:
-        - "'llama-70b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-
-
-
-
-    - name: Deploy Llama70b LLM Model
-      block:
-        - name: Delete Ingress resource Llama70b from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-llama-70b-ingress
-            state: absent
-          tags: install-llama-70b
-        - name: Delete Ingress resource Llama70b from auth-apisix namespace
-          tags: install-llama-70b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-llama-70b-ingress
-            state: absent
-        - name: Deploy LLM model Llama70b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-llama-70b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="meta-llama/Llama-3.1-70B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size=4
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Llama70b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "meta-llama/Llama-3.1-70B-Instruct"
-            reg_litellm_model: "openai/meta-llama/Llama-3.1-70B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-llama-70b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-llama-70b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-llama-70b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-llama-70b
-      when:
-        - '"llama-70b" in model_name_list'
-        - install_true == 'true'
-
-    - name: Check if vllm-llama-70b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama-70b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama-70b
-    - name: Uninstall llama-70b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama-70b"
-      run_once: true
-      tags: uninstall-llama-70b
-      when:
-        - "'llama-70b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Llama3-3-70b LLM Model
-      block:
-        - name: Delete Ingress resource Llama3.3-70b from default namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-llama-3-3-70b-ingress
-            state: absent
-          tags: install-llama-3-3-70b
-        - name: Delete Ingress resource Llama3-3-70b from auth-apisix namespace
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-llama-3-3-70b-ingress
-            state: absent
-          tags: install-llama-3-3-70b
-        - name: Deploy LLM model Llama3-3-70b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-llama-3-3-70b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="meta-llama/Llama-3.3-70B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --set tensor_parallel_size=4
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-          tags: install-llama-3-3-70b
-        - name: Register LLM model Llama3-3-70b
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "meta-llama/Llama-3.3-70B-Instruct"
-            reg_litellm_model: "openai/meta-llama/Llama-3.3-70B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-llama-3-3-70b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-llama-3-3-70b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-llama-3-3-70b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      when:
-        - model_name_list is defined
-        - "'llama-3-3-70b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - install_true == 'true'
-
-    - name: Check if vllm-llama-3-3-70b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama-3-3-70b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama-3-3-70b
-    - name: Uninstall vllm-llama-3-3-70b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama-3-3-70b"
-      run_once: true
-      tags: uninstall-llama-3-3-70b
-      when:
-        - "'llama-3-3-70b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Mixtral7b LLM Model
-      block:
-        - name: Delete Ingress resource Mixtral7b from default namespace
-          tags: install-mixtral-8x-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-mixtral-7b-ingress
-            state: absent
-        - name: Delete Ingress resource Mixtral7b from auth-apisix namespace
-          tags: install-mixtral-8x-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-mixtral-7b-ingress
-            state: absent
-        - name: Deploy LLM model Mixtral7b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-mixtral-7b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="mistralai/Mixtral-8x7B-Instruct-v0.1"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Mixtral7b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "mistralai/Mixtral-8x7B-Instruct-v0.1"
-            reg_litellm_model: "openai/mistralai/Mixtral-8x7B-Instruct-v0.1"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-mixtral-7b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-mixtral-8x-7b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-mixtral-8x-7b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-mixtral-8x-7b
-      when:
-        - '"mixtral-8x-7b" in model_name_list'
-        - install_true == 'true'
-
-    - name: Check if Mixtral7b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-mixtral-7b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-mixtral-8x-7b
-    - name: Uninstall mixtral-8x-7b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-mixtral-7b"
-      run_once: true
-      tags: uninstall-mixtral-8x-7b
-      when:
-        - "'mixtral-8x-7b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy codellama LLM Model
-      block:
-        - name: Delete Ingress resource Codellama from default namespace
-          tags: install-codellama-34b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-codellama-ingress
-            state: absent
-        - name: Delete Ingress resource Codellama from auth-apisix namespace
-          tags: install-codellama-34b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-codellama-ingress
-            state: absent
-        - name: Deploy LLM model codellama
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-codellama "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="codellama/CodeLlama-34b-Instruct-hf"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Codellama model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "codellama/CodeLlama-34b-Instruct-hf"
-            reg_litellm_model: "openai/codellama/CodeLlama-34b-Instruct-hf"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-codellama-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-codellama-34b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-codellama-34b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      tags: install-codellama-34b
-      when:
-        - '"codellama-34b" in model_name_list'
-        - install_true == 'true'
-    - name: Check if codellama-34b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-codellama --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-codellama-34b
-    - name: Uninstall codellama-34b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-codellama"
-      run_once: true
-      tags: uninstall-codellama-34b
-      when:
-        - "'codellama-34b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Faclon3 7b LLM Model
-      block:
-        - name: Delete Ingress resource Falcon3 7b from default namespace
-          tags: install-falcon3-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-falcon3-7b-ingress
-            state: absent
-        - name: Delete Ingress resource Falcon3 7b from auth-apisix namespace
-          tags: install-falcon3-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-falcon3-7b-ingress
-            state: absent
-        - name: Deploy LLM model Falcon3-7b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-falcon3-7b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="tiiuae/Falcon3-7B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Falcon3-7b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "tiiuae/Falcon3-7B-Instruct"
-            reg_litellm_model: "openai/tiiuae/Falcon3-7B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-falcon3-7b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-falcon3-7b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-falcon3-7b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-falcon3-7b
-      when:
-        - '"falcon3-7b" in model_name_list'
-        - install_true == 'true'
-    - name: Check if Falcon3 7b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-falcon3-7b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-falcon3-7b
-    - name: Uninstall Falcon3 7b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-falcon3-7b"
-      run_once: true
-      tags: uninstall-falcon3-7b
-      when:
-        - "'falcon3-7b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Mistral_7b LLM Model
-      block:
-        - name: Delete Ingress resource Mistral 7b from default namespace
-          tags: install-mistral-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-mistral-7b-ingress
-            state: absent
-        - name: Delete Ingress resource Mistral 7b from auth-apisix namespace
-          tags: install-mistral-7b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-mistral-7b-ingress
-            state: absent
-        - name: Deploy LLM model Mistral_7b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-mistral-7b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="mistralai/Mistral-7B-Instruct-v0.3"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Mistral_7b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "mistralai/Mistral-7B-Instruct-v0.3"
-            reg_litellm_model: "openai/mistralai/Mistral-7B-Instruct-v0.3"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-mistral-7b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-mistral-7b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-mistral-7b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-mistral-7b
-      when:
-        - '"mistral-7b" in model_name_list'
-        - install_true == 'true'
-    - name: Check if Mistral_7b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-mistral-7b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-mistral-7b
-    - name: Uninstall Mistral_7b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-mistral-7b"
-      run_once: true
-      tags: uninstall-mistral-7b
-      when:
-        - "'mistral-7b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy tei LLM Model
-      block:
-        - name: Delete existing Ingress resource tei in auth-apisix namespace
-          tags: install-tei
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-tei-ingress
-            state: absent
-        - name: Delete existing Ingress resource tei in default namespace
-          tags: install-tei
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-tei-ingress
-            state: absent
-        - name: Deploy LLM model tei
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-tei "{{ remote_helm_charts_base }}/tei"
-            --set EMBEDDING_MODEL_ID="BAAI/bge-small-en-v1.5"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values "{{ remote_helm_charts_base }}/tei/gaudi-values.yaml"
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            --set teirerank.namespace=default
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register vllm-tei model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "BAAI/bge-small-en-v1.5"
-            reg_litellm_model: "huggingface/BAAI/bge-small-en-v1.5"
-            reg_custom_llm_provider: "huggingface"
-            reg_api_base: "http://vllm-tei-service.default"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-            reg_model_mode: "embedding"
-          tags:
-            - install-tei
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-tei' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-tei
-      when:
-        - "'tei' in model_name_list"
-        - install_true == 'true'
-    - name: Check if tei Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-tei --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-tei
-    - name: Uninstall tei Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-tei"
-      run_once: true
-      tags: uninstall-tei
-      when:
-        - "'tei' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy teirerank LLM Model
-      block:
-        - name: Delete Ingress resource Teirerank from default namespace
-          tags: install-rerank
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-teirerank-ingress
-            state: absent
-        - name: Delete Ingress resource Teirerank from auth-apisix namespace
-          tags: install-rerank
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-teirerank-ingress
-            state: absent
-        - name: Deploy LLM model teirerank
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-teirerank "{{ remote_helm_charts_base }}/teirerank"
-            --set RERANK_MODEL_ID="BAAI/bge-reranker-base"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --values "{{ remote_helm_charts_base }}/teirerank/gaudi-values.yaml"
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            --set teirerank.namespace=default
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register vllm-teirerank model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "BAAI/bge-reranker-base"
-            reg_litellm_model: "huggingface/BAAI/bge-reranker-base"
-            reg_custom_llm_provider: "huggingface"
-            reg_api_base: "http://vllm-teirerank-service.default"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-            reg_model_mode: "rerank"
-          tags:
-            - install-rerank
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-rerank' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-rerank
-      when:
-        - "'rerank' in model_name_list"
-        - install_true == 'true'
-    - name: Check if teirerank Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-teirerank --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-rerank
-    - name: Uninstall teirerank Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-teirerank"
-      run_once: true
-      tags: uninstall-rerank
-      when:
-        - "'rerank' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Deepkseek R1 Distill Qwen 32b LLM Model
-      block:
-        - name: Delete Ingress resource Deepkseek R1 Distill Qwen 32b from default namespace
-          tags: install-deepseek-r1-distill-qwen-32b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-deepkseek-r1-qwen-32b-ingress
-            state: absent
-          run_once: true
-        - name: Delete Ingress resource Deepkseek R1 Distill Qwen 32b from auth-apisix namespace
-          tags: install-deepseek-r1-distill-qwen-32b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-deepkseek-r1-qwen-32b-ingress
-            state: absent
-          run_once: true
-        - name: Deploy LLM model Deepkseek R1 Distill Qwen 32b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-deepkseek-r1-qwen-32b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --set tensor_parallel_size=2
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Deepkseek R1 Distill Qwen 32b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-            reg_litellm_model: "openai/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-deepkseek-r1-qwen-32b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-deepseek-r1-distill-qwen-32b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-deepseek-r1-distill-qwen-32b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-deepseek-r1-distill-qwen-32b
-      when:
-        - "'deepseek-r1-distill-qwen-32b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - install_true == 'true'
-
-    - name: Check if vllm-deepkseek-r1-qwen-32b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-deepkseek-r1-qwen-32b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-deepseek-r1-distill-qwen-32b
-    - name: Uninstall vllm-deepkseek-r1-qwen-32b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-deepkseek-r1-qwen-32b"
-      run_once: true
-      tags: uninstall-deepseek-r1-distill-qwen-32b
-      when:
-        - "'deepseek-r1-distill-qwen-32b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Deepkseek R1 Distill Llama 8b LLM Model
-      block:
-        - name: Delete Ingress resource Deepkseek R1 Distill Llama 8b from default namespace
-          tags: install-deepseek-r1-distill-llama8b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-deepkseek-r1-llama-8b-ingress
-            state: absent
-        - name: Delete Ingress resource Deepkseek R1 Distill Llama 8b from auth-apisix namespace
-          tags: install-deepseek-r1-distill-llama8b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-deepkseek-r1-llama-8b-ingress
-            state: absent
-        - name: Deploy LLM model Deepkseek R1 Distill Llama 8b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-deepkseek-r1-llama-8b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --set tensor_parallel_size={{ tensor_parallel_size_vllm }}
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Deepkseek R1 Distill Llama 8b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
-            reg_litellm_model: "openai/deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-deepkseek-r1-llama-8b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-deepseek-r1-distill-llama8b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-deepseek-r1-distill-llama8b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-deepseek-r1-distill-llama8b
-      when:
-        - "'deepseek-r1-distill-llama8b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - install_true == 'true'
-
-    - name: Check if vllm-deepkseek-r1-llama-8b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-deepkseek-r1-llama-8b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-deepseek-r1-distill-llama8b
-    - name: Uninstall vllm-deepkseek-r1-llama-8b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-deepkseek-r1-llama-8b"
-      run_once: true
-      tags: uninstall-deepseek-r1-distill-llama8b
-      when:
-        - "'deepseek-r1-distill-llama8b' in (model_name_list | regex_replace(',', ' ') | split())"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
-    - name: Deploy Llama3.405b LLM Model
-      block:
-        - name: Delete Ingress resource Llama3.405b from default namespace
-          tags: install-llama3-405b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: default
-            name: vllm-llama3-405b-ingress
-            state: absent
-        - name: Delete Ingress resource Llama3.405b from auth-apisix namespace
-          tags: install-llama3-405b
-          kubernetes.core.k8s:
-            kind: Ingress
-            namespace: auth-apisix
-            name: vllm-llama3-405b-ingress
-            state: absent
-        - name: Deploy LLM model Llama3.405b
-          ansible.builtin.command: >-
-            helm upgrade --install vllm-llama3-405b "{{ remote_helm_charts_base }}/vllm"
-            --set LLM_MODEL_ID="meta-llama/Llama-3.1-405B-Instruct"
-            --set global.monitoring="{{ vllm_metrics_enabled }}"
-            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
-            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
-            {% if apisix_enabled %}
-              --set apisix.enabled={{ apisix_enabled }}
-              --set platform={{ kubernetes_platform }}
-            {% endif %}
-            {% if gaudi_deployment %}
-              --set tensor_parallel_size=8
-              --values {{ gaudi_values_file }}
-            {% endif %}
-            {% if ingress_enabled %}
-              --set ingress.enabled={{ ingress_enabled }}
-              --set ingress.host={{ secret_name }}
-              --set ingress.secretname={{ secret_name }}
-              {% if kubernetes_platform == "eks" %}
-              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
-            {% endif %}
-            {% endif %}
-            {% if deploy_keycloak == 'yes' and apisix_enabled %}
-              --set oidc.client_id={{ keycloak_client_id | default('') }}
-              --set oidc.client_secret={{ client_secret | default('') }}
-            {% endif %}
-            {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment
-          failed_when: helm_upgrade_install_model_deployment.rc != 0
-        - name: Register Llama3.405b model
-          import_tasks: register-model-genai-gateway.yml
-          vars:
-            reg_model_name: "meta-llama/Llama-3.1-405B-Instruct"
-            reg_litellm_model: "openai/meta-llama/Llama-3.1-405B-Instruct"
-            reg_custom_llm_provider: "openai"
-            reg_api_base: "http://vllm-llama3-405b-service.default/v1"
-            reg_input_cost_per_token: 0.001
-            reg_output_cost_per_token: 0.002
-          tags:
-            - install-llama3-405b
-            - install-genai-gateway
-          run_once: true
-          when:
-            - "'install-llama3-405b' in ansible_run_tags"
-            - "'install-genai-gateway' in ansible_run_tags"
-      run_once: true
-      tags: install-llama3-405b
-      when:
-        - "'llama3-405b' in model_name_list"
-        - install_true == 'true'
-
-    - name: Check if vllm-llama3-405b Model is deployed
-      ansible.builtin.command:
-        cmd: "helm list --filter vllm-llama3-405b --short"
-      register: helm_release_installed
-      ignore_errors: true
-      run_once: true
-      tags: uninstall-llama3-405b
-    - name: Uninstall Llama3.405b Model
-      ansible.builtin.command:
-        cmd: "helm uninstall vllm-llama3-405b"
-      run_once: true
-      tags: uninstall-llama3-405b
-      when:
-        - "'llama3-405b' in model_name_list"
-        - uninstall_true == 'true'
-        - helm_release_installed.stdout != ""
-
     - name: Check if CPU Model is installed
       ansible.builtin.command:
         cmd: "helm list --filter vllm-llama-8b-cpu --short"
@@ -2059,7 +659,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_llama8b
           failed_when: helm_upgrade_install_model_deployment_cpu_llama8b.rc != 0
         - name: Register Xeon/CPU llama 8b model
@@ -2162,7 +761,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_deepseek_qwen32b
           failed_when: helm_upgrade_install_model_deployment_cpu_deepseek_qwen32b.rc != 0
         - name: Register Xeon/CPU Deepseek R1 Distill Qwen 32b model
@@ -2264,7 +862,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_deepseek_llama_8b
           failed_when: helm_upgrade_install_model_deployment_cpu_deepseek_llama_8b.rc != 0
         - name: Register Xeon/CPU Deepseek R1 Distill Llama 8B model
@@ -2369,7 +966,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu.rc != 0
         - name: Register Xeon/CPU Llama-3.2-3B model
@@ -2479,7 +1075,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu.rc != 0
         - name: Register Xeon/CPU Qwen-3-1-7B model
@@ -2584,7 +1179,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_llama3_2_3b_cpu.rc != 0
         - name: Register Xeon/CPU  Qwen-3-4B model
@@ -2687,7 +1281,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_qwen2_5_coder_7b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_qwen2_5_coder_7b_cpu.rc != 0
         - name: Register Xeon/CPU Qwen-2-5-Coder-7B model
@@ -2796,7 +1389,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_qwen2_5_coder_14b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_qwen2_5_coder_14b_cpu.rc != 0
         - name: Register Xeon/CPU Qwen-2-5-Coder-14B model
@@ -2906,7 +1498,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_qwen3_coder_30b_cpu
           failed_when: helm_upgrade_install_model_deployment_cpu_qwen3_coder_30b_cpu.rc != 0
         - name: Register Xeon/CPU Qwen3-Coder-30B model
@@ -3010,7 +1601,6 @@
               --set oidc.client_secret={{ client_secret | default('') }}
             {% endif %}
             {{ helm_proxy_args | default('') }}
-            --force
           register: helm_upgrade_install_model_deployment_cpu_whisper_small
           failed_when: helm_upgrade_install_model_deployment_cpu_whisper_small.rc != 0
         - name: Register Xeon/CPU Whisper Small model
@@ -3039,44 +1629,45 @@
 
     - name: Check if CPU TEI Embedding is installed
       ansible.builtin.command:
-        cmd: "helm list --filter vllm-tei-cpu --short"
+        cmd: "helm list --filter vllm-bge-base-en-cpu --short"
       register: helm_release_installed
       ignore_errors: true
       run_once: true
-      tags: uninstall-cpu-tei
+      tags: uninstall-cpu-bge-base-en
     - name: Uninstall CPU TEI Embedding
       ansible.builtin.command:
-        cmd: "helm uninstall vllm-tei-cpu"
+        cmd: "helm uninstall vllm-bge-base-en-cpu"
       run_once: true
-      tags: uninstall-cpu-tei
+      tags: uninstall-cpu-bge-base-en
       when:
         - model_name_list is defined
-        - "'cpu-tei' in (model_name_list | regex_replace(',', ' ') | split())"
+        - "'cpu-bge-base-en' in (model_name_list | regex_replace(',', ' ') | split())"
         - uninstall_true == 'true'
         - helm_release_installed.stdout != ""
 
     - name: Deploy CPU TEI Embedding model
       block:
         - name: Delete Ingress resource CPU TEI Embedding from default namespace
-          tags: install-cpu-tei
+          tags: install-cpu-bge-base-en
           ignore_errors: yes
           kubernetes.core.k8s:
             kind: Ingress
             namespace: default
-            name: vllm-tei-cpu-ingress
+            name: vllm-bge-base-en-cpu-ingress
             state: absent
         - name: Delete Ingress resource CPU TEI Embedding from auth-apisix namespace
-          tags: install-cpu-tei
+          tags: install-cpu-bge-base-en
           ignore_errors: yes
           kubernetes.core.k8s:
             kind: Ingress
             namespace: auth-apisix
-            name: vllm-tei-cpu-ingress
+            name: vllm-bge-base-en-cpu-ingress
             state: absent
-        - name: Deploy CPU Embedding model BAAI/bge-small-en-v1.5 Installation
+        - name: Deploy CPU Embedding model BAAI/bge-base-en-v1.5 Installation
           ansible.builtin.command: >-
-            helm upgrade --install vllm-tei-cpu "{{ remote_helm_charts_base }}/tei"
-            --set EMBEDDING_MODEL_ID="BAAI/bge-small-en-v1.5"
+            helm upgrade --install vllm-bge-base-en-cpu "{{ remote_helm_charts_base }}/vllm"
+            --values "{{ remote_helm_charts_base }}/vllm/embedding-values.yaml"
+            --set EMBEDDING_MODEL_ID="BAAI/bge-base-en-v1.5"
             --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
             --set tensor_parallel_size=1
             {% if apisix_enabled %}
@@ -3104,74 +1695,74 @@
             {% endif %}
             --set teirerank.namespace=default
             {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment_cpu_tei
-          failed_when: helm_upgrade_install_model_deployment_cpu_tei.rc != 0
-          tags: install-cpu-tei
+          register: helm_upgrade_install_model_deployment_cpu_bge_base_en
+          failed_when: helm_upgrade_install_model_deployment_cpu_bge_base_en.rc != 0
+          tags: install-cpu-bge-base-en
         - name: Register Xeon/CPU TEI Embedding model
           import_tasks: register-model-genai-gateway.yml
           vars:
-            reg_model_name: "BAAI/bge-small-en-v1.5"
-            reg_litellm_model: "huggingface/BAAI/bge-small-en-v1.5"
-            reg_custom_llm_provider: "huggingface"
-            reg_api_base: "http://vllm-tei-cpu-service.default"
+            reg_model_name: "BAAI/bge-base-en-v1.5"
+            reg_litellm_model: "hosted_vllm/BAAI/bge-base-en-v1.5"
+            reg_custom_llm_provider: "hosted_vllm"
+            reg_api_base: "http://vllm-bge-base-en-cpu-service.default/v1"
             reg_input_cost_per_token: 0.001
             reg_output_cost_per_token: 0.002
             reg_model_mode: "embedding"
           tags:
-            - install-cpu-tei
+            - install-cpu-bge-base-en
             - install-genai-gateway
           run_once: true
           when:
-            - "'install-cpu-tei' in ansible_run_tags"
+            - "'install-cpu-bge-base-en' in ansible_run_tags"
             - "'install-genai-gateway' in ansible_run_tags"
       run_once: true
-      tags: install-cpu-tei
+      tags: install-cpu-bge-base-en
       when:
         - model_name_list is defined
         - cpu_playbook == 'true'
         - install_true == 'true'
-        - "'cpu-tei' in (model_name_list | regex_replace(',', ' ') | split())"
+        - "'cpu-bge-base-en' in (model_name_list | regex_replace(',', ' ') | split())"
 
     - name: Check if CPU TEI Reranker is installed
       ansible.builtin.command:
-        cmd: "helm list --filter vllm-teirerank-cpu --short"
+        cmd: "helm list --filter vllm-bge-reranker-base-cpu --short"
       register: helm_release_installed
       ignore_errors: true
       run_once: true
-      tags: uninstall-cpu-rerank
+      tags: uninstall-cpu-bge-reranker-base
     - name: Uninstall CPU TEI Reranker
       ansible.builtin.command:
-        cmd: "helm uninstall vllm-teirerank-cpu"
+        cmd: "helm uninstall vllm-bge-reranker-base-cpu"
       run_once: true
-      tags: uninstall-cpu-rerank
+      tags: uninstall-cpu-bge-reranker-base
       when:
         - model_name_list is defined
-        - "'cpu-rerank' in (model_name_list | regex_replace(',', ' ') | split())"
+        - "'cpu-bge-reranker-base' in (model_name_list | regex_replace(',', ' ') | split())"
         - uninstall_true == 'true'
         - helm_release_installed.stdout != ""
 
     - name: Deploy CPU TEI Reranker model
       block:
         - name: Delete Ingress resource CPU TEI Reranker from default namespace
-          tags: install-cpu-rerank
+          tags: install-cpu-bge-reranker-base
           ignore_errors: yes
           kubernetes.core.k8s:
             kind: Ingress
             namespace: default
-            name: vllm-teirerank-cpu-ingress
+            name: vllm-bge-reranker-base-cpu-ingress
             state: absent
         - name: Delete Ingress resource CPU TEI Reranker from auth-apisix namespace
-          tags: install-cpu-rerank
+          tags: install-cpu-bge-reranker-base
           ignore_errors: yes
           kubernetes.core.k8s:
             kind: Ingress
             namespace: auth-apisix
-            name: vllm-teirerank-cpu-ingress
+            name: vllm-bge-reranker-base-cpu-ingress
             state: absent
         - name: Deploy CPU Reranker model BAAI/bge-reranker-base Installation
           ansible.builtin.command: >-
-            helm upgrade --install vllm-teirerank-cpu "{{ remote_helm_charts_base }}/teirerank"
+            helm upgrade --install vllm-bge-reranker-base-cpu "{{ remote_helm_charts_base }}/vllm"
+            --values "{{ remote_helm_charts_base }}/vllm/reranker-values.yaml"
             --set RERANK_MODEL_ID="BAAI/bge-reranker-base"
             --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
             --set tensor_parallel_size=1
@@ -3200,34 +1791,237 @@
             {% endif %}
             --set teirerank.namespace=default
             {{ helm_proxy_args | default('') }}
-            --force
-          register: helm_upgrade_install_model_deployment_cpu_rerank
-          failed_when: helm_upgrade_install_model_deployment_cpu_rerank.rc != 0
-          tags: install-cpu-rerank
+          register: helm_upgrade_install_model_deployment_cpu_bge_reranker_base
+          failed_when: helm_upgrade_install_model_deployment_cpu_bge_reranker_base.rc != 0
+          tags: install-cpu-bge-reranker-base
         - name: Register Xeon/CPU TEI Reranker model
           import_tasks: register-model-genai-gateway.yml
           vars:
             reg_model_name: "BAAI/bge-reranker-base"
-            reg_litellm_model: "huggingface/BAAI/bge-reranker-base"
-            reg_custom_llm_provider: "huggingface"
-            reg_api_base: "http://vllm-teirerank-cpu-service.default"
+            reg_litellm_model: "hosted_vllm/BAAI/bge-reranker-base"
+            reg_custom_llm_provider: "hosted_vllm"
+            reg_api_base: "http://vllm-bge-reranker-base-cpu-service.default/v1"
             reg_input_cost_per_token: 0.001
             reg_output_cost_per_token: 0.002
             reg_model_mode: "rerank"
           tags:
-            - install-cpu-rerank
+            - install-cpu-bge-reranker-base
             - install-genai-gateway
           run_once: true
           when:
-            - "'install-cpu-rerank' in ansible_run_tags"
+            - "'install-cpu-bge-reranker-base' in ansible_run_tags"
             - "'install-genai-gateway' in ansible_run_tags"
       run_once: true
-      tags: install-cpu-rerank
+      tags: install-cpu-bge-reranker-base
       when:
         - model_name_list is defined
         - cpu_playbook == 'true'
         - install_true == 'true'
-        - "'cpu-rerank' in (model_name_list | regex_replace(',', ' ') | split())"
+        - "'cpu-bge-reranker-base' in (model_name_list | regex_replace(',', ' ') | split())"
+
+    - name: Check if CPU Qwen3-30B-A3B is installed
+      ansible.builtin.command:
+        cmd: "helm list --filter vllm-qwen3-30b-a3b-cpu --short"
+      register: helm_release_installed
+      ignore_errors: true
+      run_once: true
+      tags: uninstall-cpu-qwen3-30b-a3b
+    - name: Uninstall CPU Qwen3-30B-A3B
+      ansible.builtin.command:
+        cmd: "helm uninstall vllm-qwen3-30b-a3b-cpu"
+      run_once: true
+      tags: uninstall-cpu-qwen3-30b-a3b
+      when:
+        - model_name_list is defined
+        - "'cpu-qwen3-30b-a3b' in (model_name_list | regex_replace(',', ' ') | split())"
+        - uninstall_true == 'true'
+        - helm_release_installed.stdout != ""
+
+    - name: Deploy CPU Qwen3-30B-A3B-Instruct-2507 LLM model
+      block:
+        - name: Delete Ingress resource CPU Qwen3-30B-A3B from default namespace
+          tags: install-cpu-qwen3-30b-a3b
+          ignore_errors: yes
+          kubernetes.core.k8s:
+            kind: Ingress
+            namespace: default
+            name: vllm-qwen3-30b-a3b-cpu-ingress
+            state: absent
+        - name: Delete Ingress resource CPU Qwen3-30B-A3B from auth-apisix namespace
+          tags: install-cpu-qwen3-30b-a3b
+          ignore_errors: yes
+          kubernetes.core.k8s:
+            kind: Ingress
+            namespace: auth-apisix
+            name: vllm-qwen3-30b-a3b-cpu-ingress
+            state: absent
+        - name: Deploy CPU based LLM model Qwen3-30B-A3B-Instruct-2507 Installation
+          ansible.builtin.command: >-
+            helm upgrade --install vllm-qwen3-30b-a3b-cpu "{{ remote_helm_charts_base }}/vllm"
+            --values "{{ xeon_values_file }}"
+            --set LLM_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
+            --set chatTemplateConfigMap.enabled=true
+            --set hostIPC=true
+            --set global.monitoring="{{ vllm_metrics_enabled }}"
+            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
+            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
+            {% if cpu_playbook == 'true' %}
+            --set cpu_balloon_annotation="vllm-balloon"
+            --set podLabels.name="vllm"
+            --set cpu="{{ optimal_balloon_config.workload_cpus | default(48) }}"
+            --set memory="{{ optimal_memory_gb | default(128) }}Gi"
+            --set tensor_parallel_size={{ tensor_parallel_size | default(1) }}
+            --set pipeline_parallel_size={{ pipeline_parallel_size | default(1) }}
+            {% endif %}
+            {% if apisix_enabled %}
+              --set apisix.enabled={{ apisix_enabled }}
+              --set platform={{ kubernetes_platform }}
+            {% endif %}
+            {% if kubernetes_platform == 'openshift' %}
+              --set route.enabled=true
+              --set route.host={{ secret_name }}
+              --set route.tls.termination=edge
+              --set route.tls.insecureEdgeTerminationPolicy=Redirect
+              --set ingress.enabled=false
+            {% elif ingress_enabled %}
+              --set ingress.enabled={{ ingress_enabled }}
+              --set ingress.host={{ secret_name }}
+              --set ingress.secretname={{ secret_name }}
+              --set route.enabled=false
+              {% if kubernetes_platform == "eks" %}
+              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
+              {% endif %}
+            {% endif %}
+            {% if deploy_keycloak == 'yes' and apisix_enabled %}
+              --set oidc.client_id={{ keycloak_client_id | default('') }}
+              --set oidc.client_secret={{ client_secret | default('') }}
+            {% endif %}
+            {{ helm_proxy_args | default('') }}
+          register: helm_upgrade_install_model_deployment_cpu_qwen3_30b_a3b
+          failed_when: helm_upgrade_install_model_deployment_cpu_qwen3_30b_a3b.rc != 0
+        - name: Register Xeon/CPU Qwen3-30B-A3B-Instruct-2507 model
+          import_tasks: register-model-genai-gateway.yml
+          vars:
+            reg_model_name: "Qwen/Qwen3-30B-A3B-Instruct-2507"
+            reg_litellm_model: "hosted_vllm/Qwen/Qwen3-30B-A3B-Instruct-2507"
+            reg_custom_llm_provider: "hosted_vllm"
+            reg_api_base: "http://vllm-qwen3-30b-a3b-cpu-service.default/v1"
+            reg_input_cost_per_token: 0.001
+            reg_output_cost_per_token: 0.002
+          tags:
+            - install-cpu-qwen3-30b-a3b
+            - install-genai-gateway
+          run_once: true
+          when:
+            - "'install-cpu-qwen3-30b-a3b' in ansible_run_tags"
+            - "'install-genai-gateway' in ansible_run_tags"
+      run_once: true
+      tags: install-cpu-qwen3-30b-a3b
+      when:
+        - model_name_list is defined
+        - cpu_playbook == 'true'
+        - install_true == 'true'
+        - "'cpu-qwen3-30b-a3b' in (model_name_list | regex_replace(',', ' ') | split())"
+
+    - name: Check if CPU Gemma-4-26B is installed
+      ansible.builtin.command:
+        cmd: "helm list --filter vllm-gemma4-26b-a4b-cpu --short"
+      register: helm_release_installed
+      ignore_errors: true
+      run_once: true
+      tags: uninstall-cpu-gemma4-26b-a4b
+    - name: Uninstall CPU Gemma-4-26B
+      ansible.builtin.command:
+        cmd: "helm uninstall vllm-gemma4-26b-a4b-cpu"
+      run_once: true
+      tags: uninstall-cpu-gemma4-26b-a4b
+      when:
+        - model_name_list is defined
+        - "'cpu-gemma4-26b-a4b' in (model_name_list | regex_replace(',', ' ') | split())"
+        - uninstall_true == 'true'
+        - helm_release_installed.stdout != ""
+
+    - name: Deploy CPU gemma-4-26B-A4B-it LLM model
+      block:
+        - name: Delete Ingress resource CPU Gemma-4-26B from default namespace
+          tags: install-cpu-gemma4-26b-a4b
+          ignore_errors: yes
+          kubernetes.core.k8s:
+            kind: Ingress
+            namespace: default
+            name: vllm-gemma4-26b-a4b-cpu-ingress
+            state: absent
+        - name: Delete Ingress resource CPU Gemma-4-26B from auth-apisix namespace
+          tags: install-cpu-gemma4-26b-a4b
+          ignore_errors: yes
+          kubernetes.core.k8s:
+            kind: Ingress
+            namespace: auth-apisix
+            name: vllm-gemma4-26b-a4b-cpu-ingress
+            state: absent
+        - name: Deploy CPU based LLM model gemma-4-26B-A4B-it Installation
+          ansible.builtin.command: >-
+            helm upgrade --install vllm-gemma4-26b-a4b-cpu "{{ remote_helm_charts_base }}/vllm"
+            --values "{{ xeon_values_file }}"
+            --set LLM_MODEL_ID="google/gemma-4-26B-A4B-it"
+            --set global.monitoring="{{ vllm_metrics_enabled }}"
+            --set svcmonitor.enabled="{{ vllm_metrics_enabled }}"
+            --set global.HUGGINGFACEHUB_API_TOKEN={{ hugging_face_token }}
+            {% if cpu_playbook == 'true' %}
+            --set cpu_balloon_annotation="vllm-balloon"
+            --set podLabels.name="vllm"
+            --set cpu="{{ optimal_balloon_config.workload_cpus | default(8) }}"
+            --set memory="{{ optimal_memory_gb | default(64) }}Gi"
+            --set tensor_parallel_size={{ tensor_parallel_size | default(1) }}
+            --set pipeline_parallel_size={{ pipeline_parallel_size | default(1) }}
+            {% endif %}
+            {% if apisix_enabled %}
+              --set apisix.enabled={{ apisix_enabled }}
+              --set platform={{ kubernetes_platform }}
+            {% endif %}
+            {% if kubernetes_platform == 'openshift' %}
+              --set route.enabled=true
+              --set route.host={{ secret_name }}
+              --set route.tls.termination=edge
+              --set route.tls.insecureEdgeTerminationPolicy=Redirect
+              --set ingress.enabled=false
+            {% elif ingress_enabled %}
+              --set ingress.enabled={{ ingress_enabled }}
+              --set ingress.host={{ secret_name }}
+              --set ingress.secretname={{ secret_name }}
+              --set route.enabled=false
+              {% if kubernetes_platform == "eks" %}
+              --set aws_certificate_arn={{ aws_certificate_arn | default('') }}
+              {% endif %}
+            {% endif %}
+            {% if deploy_keycloak == 'yes' and apisix_enabled %}
+              --set oidc.client_id={{ keycloak_client_id | default('') }}
+              --set oidc.client_secret={{ client_secret | default('') }}
+            {% endif %}
+            {{ helm_proxy_args | default('') }}
+          register: helm_upgrade_install_model_deployment_cpu_gemma4_26b
+          failed_when: helm_upgrade_install_model_deployment_cpu_gemma4_26b.rc != 0
+        - name: Register Xeon/CPU Gemma-4-26B model
+          import_tasks: register-model-genai-gateway.yml
+          vars:
+            reg_model_name: "google/gemma-4-26B-A4B-it"
+            reg_litellm_model: "openai/google/gemma-4-26B-A4B-it"
+            reg_custom_llm_provider: "openai"
+            reg_api_base: "http://vllm-gemma4-26b-a4b-cpu-service.default/v1"
+            reg_input_cost_per_token: 0.001
+            reg_output_cost_per_token: 0.002
+          tags:
+            - install-cpu-gemma4-26b-a4b
+          when:
+            - "'install-cpu-gemma4-26b-a4b' in ansible_run_tags"
+            - "'install-genai-gateway' in ansible_run_tags"
+      run_once: true
+      tags: install-cpu-gemma4-26b-a4b
+      when:
+        - model_name_list is defined
+        - cpu_playbook == 'true'
+        - install_true == 'true'
+        - "'cpu-gemma4-26b-a4b' in (model_name_list | regex_replace(',', ' ') | split())"
 
     - name: List of Models to be Installed
       tags: always

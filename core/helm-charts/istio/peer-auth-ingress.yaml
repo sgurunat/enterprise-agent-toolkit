@@ -13,6 +13,6 @@ spec:
     mode: STRICT
   portLevelMtls:
     443:
-      mode: PERMISSIVE
+      mode: STRICT
     8443:
-      mode: PERMISSIVE
+      mode: STRICT

@@ -19,6 +19,12 @@ setup_initial_env() {
         git config --global http.proxy "$https_proxy"
         git config --global https.proxy "$https_proxy"
     fi
+    # A directory without .git means a previous clone failed or was interrupted.
+    # Remove it so the clone is retried cleanly.
+    if [[ -d "$KUBESPRAYDIR" && ! -d "$KUBESPRAYDIR/.git" ]]; then
+        echo "Kubespray directory exists but is not a valid git repo — removing and recloning..."
+        rm -rf "$KUBESPRAYDIR"
+    fi
     if [ ! -d "$KUBESPRAYDIR" ]; then
         git clone https://github.com/kubernetes-sigs/kubespray.git $KUBESPRAYDIR
         if [ $? -ne 0 ] || [ ! -d "$KUBESPRAYDIR/.git" ]; then
@@ -41,7 +47,15 @@ setup_initial_env() {
     fi
     
     VENVDIR="$KUBESPRAYDIR/venv"
-    REMOTEDIR="/tmp/helm-charts"    
+    REMOTEDIR="/tmp/helm-charts"
+    # Check for a valid venv — directory alone is not enough (bin/activate must exist).
+    # A missing bin/ means the venv was never fully created (e.g. interrupted or
+    # partially written by a previous root run). Remove the incomplete dir and recreate.
+    if [[ -d "$VENVDIR" && ! -f "$VENVDIR/bin/activate" ]]; then
+        echo "Incomplete virtual environment detected (bin/activate missing) — removing and recreating..."
+        sudo chown -R "$(id -u):$(id -g)" "$VENVDIR"
+        rm -rf "$VENVDIR"
+    fi
     if [ ! -d "$VENVDIR" ]; then                
         echo "Installing python3-venv package..."
         if command -v apt &> /dev/null; then            
@@ -93,8 +107,6 @@ setup_initial_env() {
     cp  "$HOMEDIR"/inventory/hosts.yaml $KUBESPRAYDIR/inventory/mycluster/
     cp "$HOMEDIR"/inventory/metadata/addons.yml $KUBESPRAYDIR/inventory/mycluster/group_vars/k8s_cluster/addons.yml    
     cp "$HOMEDIR"/playbooks/* "$KUBESPRAYDIR"/playbooks/    
-    gaudi2_values_file_path="$REMOTEDIR/vllm/gaudi-values.yaml"
-    gaudi3_values_file_path="$REMOTEDIR/vllm/gaudi3-values.yaml"
     xeon_values_file_path="$REMOTEDIR/vllm/xeon-values.yaml"
     cp "$HOMEDIR"/inventory/metadata/addons.yml $KUBESPRAYDIR/inventory/mycluster/group_vars/k8s_cluster/addons.yml
     cp "$HOMEDIR"/inventory/metadata/all.yml $KUBESPRAYDIR/inventory/mycluster/group_vars/all/all.yml
@@ -132,6 +144,31 @@ setup_initial_env() {
         fi
     fi
 
+    # ── Sync litellm_master_key from the live cluster if already deployed ─────
+    # If LiteLLM is already running, the key in vault.yml may be stale (e.g. from
+    # a prior run on a different repo clone). Pull the live key from the pod env
+    # so subsequent ansible/helm calls use the correct credential.
+    if command -v kubectl &>/dev/null; then
+        local _live_key
+        _live_key="$(kubectl get secret -n genai-gateway litellm-secret \
+            -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+        # Fall back to reading directly from the pod environment
+        if [[ -z "${_live_key}" ]]; then
+            _live_key="$(kubectl exec -n genai-gateway deployment/genai-gateway-deployment \
+                -- env 2>/dev/null | grep '^LITELLM_MASTER_KEY=' | cut -d= -f2- || true)"
+        fi
+        if [[ -n "${_live_key}" ]]; then
+            local _vault_key
+            _vault_key="$(grep '^litellm_master_key:' "$vault_file" \
+                | sed 's/litellm_master_key:[[:space:]]*//' | tr -d '"' || true)"
+            if [[ "${_live_key}" != "${_vault_key}" ]]; then
+                echo -e "${YELLOW}Syncing litellm_master_key in vault.yml with the live cluster key...${NC}"
+                sed -i "s|^litellm_master_key:.*|litellm_master_key: \"${_live_key}\"|" "$vault_file"
+                echo -e "${GREEN}vault.yml litellm_master_key updated.${NC}"
+            fi
+        fi
+    fi
+
     if [ "$purge_inference_cluster" != "purging" ]; then        
         if [[ "$deploy_llm_models" == "yes" || "$deploy_keycloak_apisix" == "yes" || "$deploy_genai_gateway" == "yes" || "$deploy_observability" == "yes" || "$deploy_logging" == "yes" || "$deploy_ceph" == "yes" || "$deploy_istio" == "yes" || "$deploy_finetune_plugin" == "yes" ]]; then
             if [ ! -s "$HOMEDIR/inventory/metadata/vault.yml" ]; then                
@@ -160,8 +197,6 @@ setup_initial_env() {
         echo "Skipping infrastructure readiness check due to --skip-check argument."
     fi
     echo "Infrastructure readiness check completed successfully."    
-    gaudi2_values_file_path="$REMOTEDIR/vllm/gaudi-values.yaml"
-    gaudi3_values_file_path="$REMOTEDIR/vllm/gaudi3-values.yaml"
     ansible-galaxy collection install community.kubernetes        
 }
 
@@ -217,6 +252,18 @@ net.ipv4.ip_forward                 = 1
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 EOF
+    # On Ubuntu 22.04+ /etc/sysctl.d/99-sysctl.conf is expected to exist as a
+    # symlink to /etc/sysctl.conf.  Some minimal images ship without it, causing
+    # 'sysctl: cannot open ... No such file or directory' noise from --system.
+    # Create the symlink (or a plain file as fallback) so sysctl --system is clean.
+    if [[ ! -e /etc/sysctl.d/99-sysctl.conf ]]; then
+        if [[ -f /etc/sysctl.conf ]]; then
+            sudo ln -s /etc/sysctl.conf /etc/sysctl.d/99-sysctl.conf
+        else
+            sudo touch /etc/sysctl.d/99-sysctl.conf
+        fi
+    fi
+
     sudo sysctl --system
 
     echo -e "${GREEN}Kernel parameters applied.${NC}"
@@ -233,11 +280,11 @@ EOF
     sudo sed -i.bak -E 's|^([^#].*\s+swap\s+.*)$|# \1|' /etc/fstab
     echo -e "${GREEN}Swap entries disabled in /etc/fstab.${NC}"
 
-    # ── Install and configure containerd if not already running ───────────────
+    # ── Install and configure containerd ─────────────────────────────────────
     if systemctl is-active --quiet containerd 2>/dev/null; then
-        echo -e "${GREEN}containerd is already running — skipping install.${NC}"
+        echo -e "${GREEN}containerd is already running — reconfiguring.${NC}"
     else
-        echo "containerd is not running. Installing and configuring..."
+        echo "containerd is not running. Installing..."
         if command -v apt &>/dev/null; then
             sudo apt update && sudo apt install -y containerd
         elif command -v dnf &>/dev/null; then
@@ -246,13 +293,98 @@ EOF
             echo -e "${RED}ERROR: Cannot install containerd — unknown package manager.${NC}"
             exit 1
         fi
+    fi
 
-        # Generate default config and enable SystemdCgroup
-        sudo mkdir -p /etc/containerd
-        containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
-        sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    # Always (re)write the containerd config so SystemdCgroup and sandbox_image
+    # are correct — covers fresh installs, reinstalls, and version upgrades.
+    # containerd 2.x changed the CRI plugin ID but the field names are the same;
+    # a plain sed on the field value works for both 1.x and 2.x config formats.
+    # Note: do NOT set base_runtime_spec to cri-base.json — containerd 2.x does
+    # not generate that file via 'containerd config default', causing CRI to fail
+    # with "unknown service runtime.v1.RuntimeService".
+    sudo mkdir -p /etc/containerd
+    containerd config default | sed \
+        -e 's/SystemdCgroup = false/SystemdCgroup = true/g' \
+        -e 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' | \
+        sudo tee /etc/containerd/config.toml > /dev/null
 
+    # ── Configure containerd proxy (required to pull images on proxied networks) ──
+    # Read proxy from environment; these are set by read_config_file from
+    # agentic-config.cfg before this function is called.
+    local _http_proxy="${http_proxy:-${HTTP_PROXY:-}}"
+    local _https_proxy="${https_proxy:-${HTTPS_PROXY:-}}"
+    local _no_proxy="${no_proxy:-${NO_PROXY:-}}"
+
+    # Always ensure k8s service CIDR (10.96.0.0/12), pod CIDR (192.168.0.0/16),
+    # and the service cluster IP (10.96.0.1) are excluded from proxy so that the
+    # Calico CNI binary (which inherits containerd's env) never proxies traffic to
+    # the k8s API server — a proxied TLS connection causes x509 IP SAN failures.
+    local _k8s_noproxy="10.96.0.1,10.96.0.0/12,192.168.0.0/16"
+
+    if [[ -n "${_no_proxy}" ]]; then
+        _no_proxy="${_no_proxy},${_k8s_noproxy}"
+    else
+        _no_proxy="${_k8s_noproxy}"
+    fi
+
+    if [[ -n "${_http_proxy}" || -n "${_https_proxy}" ]]; then
+        local _proxy_dir="/etc/systemd/system/containerd.service.d"
+        local _proxy_file="${_proxy_dir}/http-proxy.conf"
+
+        sudo mkdir -p "${_proxy_dir}"
+
+        # Build the exact desired configuration string in memory
+        local _desired_conf
+        _desired_conf=$(cat <<EOF
+[Service]
+Environment="HTTP_PROXY=${_http_proxy}"
+Environment="HTTPS_PROXY=${_https_proxy}"
+Environment="NO_PROXY=${_no_proxy}"
+EOF
+)
+
+        # Check if the file exists and exactly matches our desired configuration
+        if [[ ! -f "${_proxy_file}" ]] || ! echo "${_desired_conf}" | sudo cmp -s - "${_proxy_file}"; then
+            # File is missing or different: Write it and restart the service
+            echo "${_desired_conf}" | sudo tee "${_proxy_file}" > /dev/null
+            echo -e "${GREEN}containerd proxy drop-in written/updated.${NC}"
+
+            sudo systemctl daemon-reload
+            sudo systemctl enable --now containerd
+            sudo systemctl restart containerd
+            echo -e "${GREEN}containerd proxy configured and restarted successfully.${NC}"
+        else
+            # File exists and matches perfectly: Do nothing
+            echo -e "${GREEN}containerd proxy configuration is already up to date. No restart needed.${NC}"
+            sudo systemctl enable --now containerd
+        fi
+    else
+        # No proxy variables were set, just ensure containerd is enabled and running
         sudo systemctl enable --now containerd
-        echo -e "${GREEN}containerd installed and started successfully.${NC}"
+    fi
+
+    # ── Configure containerd proxy so image pulls (registry.k8s.io) work ──────
+    # containerd is installed via apt above (not Kubespray's containerd role), so
+    # it has NO proxy env. Behind a corporate proxy, kubeadm init's preflight image
+    # pulls fail with "dial tcp ... i/o timeout". Apply the drop-in unconditionally
+    # so the re-run case (containerd already running, install block skipped) is
+    # also covered.
+    if [[ -n "${http_proxy:-}" || -n "${https_proxy:-}" ]]; then
+        echo "Configuring containerd proxy (systemd drop-in)..."
+        # Cluster-internal traffic must bypass the proxy: service CIDR + pod CIDR
+        # (the CIDRs kubeadm init uses), plus whatever no_proxy already carries.
+        # These MUST match the --service-cidr / --pod-network-cidr passed to
+        # `kubeadm init` in core/playbooks/cluster.yml — keep in sync if changed there.
+        local _ctr_no_proxy="${no_proxy:-localhost,127.0.0.1},10.96.0.0/12,192.168.0.0/16"
+        sudo mkdir -p /etc/systemd/system/containerd.service.d
+        sudo tee /etc/systemd/system/containerd.service.d/http-proxy.conf > /dev/null <<EOF
+[Service]
+Environment="HTTP_PROXY=${http_proxy:-${https_proxy}}"
+Environment="HTTPS_PROXY=${https_proxy:-${http_proxy}}"
+Environment="NO_PROXY=${_ctr_no_proxy}"
+EOF
+        sudo systemctl daemon-reload
+        sudo systemctl restart containerd
+        echo -e "${GREEN}containerd proxy configured.${NC}"
     fi
 }

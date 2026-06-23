@@ -1,5 +1,3 @@
-# Copyright (C) 2025-2026 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
 # Setup Bastion Node with Dependencies for Remote Kubernetes Cluster Management
 # This playbook installs all necessary tools for managing a remote Kubernetes cluster
 # from a bastion/jump host using kubeconfig files.

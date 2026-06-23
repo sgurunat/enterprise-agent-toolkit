@@ -1,5 +1,3 @@
-# Copyright (C) 2025-2026 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
 {{- if and .Values.ingress.enabled .Values.ingress.eks }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress

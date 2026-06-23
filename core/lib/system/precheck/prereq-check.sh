@@ -205,7 +205,7 @@ run_system_prerequisites_check() {
                 echo -e "${RED}  - $issue${NC}"
             done
             echo ""
-            echo -e "${YELLOW}Python 3.10+ is required for Agentic AI Stack deployment.${NC}"
+            echo -e "${YELLOW}Python 3.10+ is required for Intel AI for Enterprise Agent Toolkit deployment.${NC}"
             echo -e "${YELLOW}Please install/configure Python 3.10+ and set python3_interpreter, then try again.${NC}"
             echo -e "${YELLOW}RHEL: dnf install python3 python3-pip${NC}"
             echo -e "${YELLOW}Ubuntu: apt update && apt install python3 python3-pip${NC}"

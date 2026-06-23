@@ -1,5 +1,7 @@
+#!/bin/bash
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
 manage_kubeconfig() {
     local max_attempts=3
     local attempt=1

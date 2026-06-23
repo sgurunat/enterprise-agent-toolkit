@@ -25,7 +25,7 @@ image:
   # Uncomment the following line to set desired image pull policy if needed, as one of Always, IfNotPresent, Never.
   # pullPolicy: ""
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "v0.21.0"
+  tag: "v0.23.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -150,7 +150,6 @@ affinity:
 LLM_MODEL_ID: Intel/neural-chat-7b-v3-3
 SERVED_MODEL_NAME: ""
 # Environment variables for vLLM (set in configmap):
-# https://docs.vllm.ai/en/latest/getting_started/gaudi-installation.html#environment-variables
 VLLM_CPU_KVCACHE_SPACE: "40"
 VLLM_RPC_TIMEOUT: "100000"
 VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"

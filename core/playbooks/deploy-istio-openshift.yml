@@ -12,7 +12,6 @@
     ingress_ns: ingress-nginx
     genai_gw_ns: genai-gateway
     observability_ns: observability
-    habana_ns: habana-ai-operator
     auth_apisix_ns: auth-apisix
     peer_auth_path_base: "{{ helm_charts_base }}/istio/peer-authentication.yaml"
     peer_auth_ingress_path_base: "{{ helm_charts_base }}/istio/peer-auth-ingress.yaml"
@@ -314,22 +313,6 @@
     - name: Apply peer-authentication.yaml to genai-gateway namespace
       command: kubectl apply -f {{ peer_auth_path }} -n {{ genai_gw_ns }}
       when: genai_gw_ns_check.rc == 0
-      run_once: true
-
-    - name: Check if habana-ai-operator namespace exists
-      command: kubectl get namespace {{ habana_ns }}
-      register: habana_ns_check
-      ignore_errors: true
-      run_once: true
-
-    - name: "[OpenShift] Label habana-ai-operator namespace for ambient mode"
-      command: kubectl label namespace {{ habana_ns }} istio.io/dataplane-mode=ambient --overwrite
-      when: habana_ns_check.rc == 0 and is_openshift | bool
-      run_once: true
-
-    - name: Apply peer-authentication.yaml to habana-ai-operator namespace
-      command: kubectl apply -f {{ peer_auth_path }} -n {{ habana_ns }}
-      when: habana_ns_check.rc == 0
       run_once: true
 
     - name: Check if observability namespace exists

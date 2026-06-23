@@ -14,9 +14,20 @@ add_inference_nodes_playbook() {
         return 1
     fi
 
-    invoke_prereq_workflows "$@"     
+    invoke_prereq_workflows "$@"
 
-    ansible-playbook -i "${INVENTORY_PATH}" playbooks/cluster.yml --become --become-user=root 
+    # Use core/playbooks/scale.yml to join only the new worker node(s) to the
+    # existing kubeadm cluster. This playbook only runs the join flow (generates
+    # a token on the control plane, then runs kubeadm join on the worker) —
+    # it does NOT run kubeadm reset/init and will not disrupt running workloads.
+    local _limit_targets="kube_control_plane,${worker_node_name}"
+    ansible-playbook -i "${INVENTORY_PATH}" \
+        playbooks/scale.yml \
+        --limit="${_limit_targets}" \
+        --become --become-user=root
+
+    echo "Labeling new worker node with ei-inference-eligible=true..."
+    ansible-playbook -i "${INVENTORY_PATH}" playbooks/label-nodes.yml
     
 }
 
@@ -42,7 +53,7 @@ add_worker_node() {
 
 
     #Rerun baloon policy if its cpu deployment
-    if [[ "$cpu_or_gpu" == "c" ]]; then
+    if [[ "$compute_platform" == "c" ]]; then
         echo "Reapplying NRI CPU Balloons for CPU deployments..."
         execute_and_check "Reapplying NRI CPU Balloons..." deploy_nri_balloons_playbook "$@" \
             "NRI CPU Balloons re-applied successfully." \

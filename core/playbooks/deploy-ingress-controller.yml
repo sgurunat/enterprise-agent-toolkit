@@ -63,6 +63,8 @@
             progressDeadlineSeconds: 300
             minReadySeconds: 0
             replicaCount: "{{ inference_infra_replica_count | int }}"
+            podAnnotations:
+              traffic.istio.io/excludeInboundPorts: "443,8443"
             hostPort:
               enabled: true
               ports:

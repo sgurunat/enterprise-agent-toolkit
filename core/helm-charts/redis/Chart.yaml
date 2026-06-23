@@ -1,14 +1,13 @@
-# Copyright (C) 2025-2026 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
 apiVersion: v2
 name: redis
-description: Standalone Redis (Bitnami/Redis OSS) shared memory backend for agentic workloads
+description: Standalone Redis Stack (with RediSearch) for shared use by agentic workloads
 type: application
-version: 0.2.0
-appVersion: "8.0.1"
+version: 0.1.0
+appVersion: "7.4.0"
 keywords:
   - redis
   - memory
-# No external chart dependencies — Redis is deployed as a self-contained StatefulSet.
-# Image: docker.io/bitnami/redis:8.0.1 (BSD-3-Clause engine, Apache-2.0 Bitnami packaging)
-# License: Apache-2.0 (chart) / BSD-3-Clause (Redis engine) — fully OSI-approved.
+  - vector-search
+# redis-stack-server is vendored locally in charts/redis-stack-server/
+# (patched to support affinity + tolerations for node scheduling).
+# Do NOT add it back as a Helm dependency — helm dep update would overwrite the patch.

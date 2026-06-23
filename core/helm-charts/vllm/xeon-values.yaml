@@ -27,7 +27,7 @@ max_model_len: 8192
 # vLLM CPU image configuration
 image:
   repository: vllm/vllm-openai-cpu
-  tag: "v0.21.0"
+  tag: "v0.23.0"
   pullPolicy: IfNotPresent
 
 # Node affinity for Xeon inference nodes
@@ -58,6 +58,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       HF_HUB_DISABLE_XET: "1"
       VLLM_CPU_SGL_KERNEL: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -65,8 +66,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--distributed_executor_backend",
         "mp",
         "--enable_chunked_prefill",
@@ -91,6 +90,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -98,8 +98,6 @@ modelConfigs:
       "128",
       "--dtype",
       "bfloat16",
-      "--max-model-len",
-      "32768",
       "--distributed_executor_backend",
       "mp",
       "--enable_chunked_prefill",
@@ -124,6 +122,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -131,8 +130,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--distributed_executor_backend",
         "mp",
         "--enable_chunked_prefill",
@@ -155,6 +152,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -162,8 +160,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--distributed_executor_backend",
         "mp",
         "--enable_chunked_prefill",
@@ -186,6 +182,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -193,8 +190,6 @@ modelConfigs:
       "128",
       "--dtype",
       "bfloat16",
-      "--max-model-len",
-      "32768",
       "--distributed_executor_backend",
       "mp",
       "--enable_chunked_prefill",
@@ -219,6 +214,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -226,8 +222,6 @@ modelConfigs:
       "128",
       "--dtype",
       "bfloat16",
-      "--max-model-len",
-      "32768",
       "--distributed_executor_backend",
       "mp",
       "--enable_chunked_prefill",
@@ -252,6 +246,7 @@ modelConfigs:
       VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -259,8 +254,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--distributed_executor_backend",
         "mp",
         "--enable_chunked_prefill",
@@ -279,7 +272,7 @@ modelConfigs:
 
   "Qwen/Qwen3-Coder-30B-A3B-Instruct":
     configMapValues:
-      VLLM_CPU_KVCACHE_SPACE: "40"
+      VLLM_CPU_KVCACHE_SPACE: "60"
       VLLM_RPC_TIMEOUT: "100000"
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
       VLLM_ENGINE_ITERATION_TIMEOUT_S: "120"
@@ -287,6 +280,7 @@ modelConfigs:
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
       #CPU_VISIBLE_MEMORY_NODES: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
   
     extraCmdArgs:
@@ -320,6 +314,7 @@ modelConfigs:
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
       TORCHDYNAMO_DISABLE: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -327,8 +322,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--distributed_executor_backend",
         "mp",
         "--enable_chunked_prefill",
@@ -355,6 +348,7 @@ modelConfigs:
       VLLM_CPU_SGL_KERNEL: "1"
       HF_HUB_DISABLE_XET: "1"
       HF_HUB_OFFLINE: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
@@ -362,8 +356,6 @@ modelConfigs:
         "128",
         "--dtype",
         "bfloat16",
-        "--max-model-len",
-        "32768",
         "--enable_chunked_prefill",
         "--enforce-eager",
         "--max-num-batched-tokens",
@@ -373,6 +365,56 @@ modelConfigs:
         "--enable-prefix-caching",
         "--enable-auto-tool-choice",
         "--tool-call-parser", "llama3_json",
+      ]
+    tensor_parallel_size: "{{ .Values.tensor_parallel_size }}"
+    pipeline_parallel_size: "{{ .Values.pipeline_parallel_size }}"
+
+  "Qwen/Qwen3-30B-A3B-Instruct-2507":
+    configMapValues:
+      VLLM_CPU_KVCACHE_SPACE: "60"
+      VLLM_RPC_TIMEOUT: "100000"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_ENGINE_ITERATION_TIMEOUT_S: "120"
+      VLLM_CPU_NUM_OF_RESERVED_CPU: "0"
+      HF_HUB_DISABLE_XET: "1"
+      VLLM_CPU_SGL_KERNEL: "1"
+      TRITON_CACHE_DIR: "/tmp/.triton"
+      TORCHINDUCTOR_CACHE_DIR: "/tmp/.torch_compile"
+      XDG_CACHE_HOME: "/tmp/.cache"               
+      HF_HOME: "/tmp/.cache/huggingface"
+      USER: "vllm"
+    extraCmdArgs:
+      [
+        "--block-size", "128",
+        "--dtype", "bfloat16",
+        "--distributed_executor_backend", "mp",
+        "--enable_chunked_prefill",
+        "--enable-prefix-caching",
+        "--enable-auto-tool-choice",
+        "--tool-call-parser", "qwen3_xml",
+        "--chat-template", "/workspace/vllm/examples/tool_chat_template_qwen3coder.jinja",
+      ]
+    tensor_parallel_size: "{{ .Values.tensor_parallel_size }}"
+    pipeline_parallel_size: "{{ .Values.pipeline_parallel_size }}"
+
+  "google/gemma-4-26B-A4B-it":
+    configMapValues:
+      TRITON_CACHE_DIR: "/tmp/.triton"
+      VLLM_CPU_KVCACHE_SPACE: "40"
+      VLLM_RPC_TIMEOUT: "100000"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_ENGINE_ITERATION_TIMEOUT_S: "120"
+      USER: "vllm"
+    extraCmdArgs:
+      [
+        "--block-size", "128",
+        "--dtype", "bfloat16",
+        "--distributed_executor_backend", "mp",
+        "--enable_chunked_prefill",
+        "--enforce-eager",
+        "--enable-prefix-caching",
+        "--enable-auto-tool-choice",
+        "--tool-call-parser", "pythonic",
       ]
     tensor_parallel_size: "{{ .Values.tensor_parallel_size }}"
     pipeline_parallel_size: "{{ .Values.pipeline_parallel_size }}"
@@ -390,13 +432,12 @@ modelConfigs:
       TORCH_INDUCTOR_CACHE_DIR: "/tmp/torchinductor_cache"
       XDG_CACHE_HOME: "/tmp/.cache"
       HF_HOME: "/tmp/huggingface"
+      TRITON_CACHE_DIR: "/tmp/.triton"
       USER: "vllm"
     extraCmdArgs:
       [
         "--dtype",
         "float32",
-        "--max-model-len",
-        "448",
         "--enforce-eager",
       ]
     tensor_parallel_size: "{{ .Values.tensor_parallel_size }}"
@@ -412,6 +453,7 @@ defaultModelConfigs:
     VLLM_CPU_SGL_KERNEL: "1"
     HF_HUB_DISABLE_XET: "1"
     TORCH_INDUCTOR_CACHE_DIR: "/tmp/torchinductor_cache"
+    TRITON_CACHE_DIR: "/tmp/.triton"
     USER: "vllm"
   extraCmdArgs:
     [
@@ -419,8 +461,6 @@ defaultModelConfigs:
       "128",
       "--dtype",
       "bfloat16",
-      "--max-model-len",
-      "32768",
       "--distributed_executor_backend",
       "mp",
       "--enable_chunked_prefill",
@@ -429,7 +469,7 @@ defaultModelConfigs:
       "2048",
       "--max-num-seqs",
       "256",
-      "--enable-prefix-caching",
+      "--enable-prefix-caching"
     ]
   tensor_parallel_size: "{{ .Values.tensor_parallel_size }}"
   pipeline_parallel_size: "{{ .Values.pipeline_parallel_size }}"

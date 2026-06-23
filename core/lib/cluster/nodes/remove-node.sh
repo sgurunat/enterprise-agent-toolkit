@@ -19,7 +19,7 @@ remove_inference_nodes_playbook() {
 }
 
 remove_worker_node() {
-    echo "Removing a worker node from the Intel Agentic AI Stack..."
+    echo "Removing a worker node from the Intel AI for Enterprise Agent Toolkit..."
     read -p "${YELLOW}WARNING: Removing a worker node will drain all resources from the node, which may cause service interruptions or data loss. This process cannot be undone. Do you want to proceed? (y/n)${NC} " -r user_response
     user_response=$(echo "$user_response" | tr '[:upper:]' '[:lower:]')        
     if [[ ! $user_response =~ ^(yes|y|Y|YES)$ ]]; then        
@@ -32,7 +32,7 @@ remove_worker_node() {
             "Removing  worker node is successful." \
             "Failed to remove worker node Exiting!."
     echo "------------------------------------------------------------------------"
-    echo "|     Node is being removed from Intel Agentic AI Stack!               |"
+    echo "|     Node is being removed from Intel AI for Enterprise Agent Toolkit!               |"
     echo "------------------------------------------------------------------------"
     
 }

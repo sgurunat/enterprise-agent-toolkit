@@ -1,5 +1,3 @@
-# Copyright (C) 2025-2026 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -28,21 +26,32 @@ spec:
               containerPort: 5432
               protocol: TCP
           env:
-            - name: POSTGRES_PASSWORD_FILE
-              value: /run/secrets/POSTGRES_PASSWORD
-            - name: POSTGRES_USER_FILE
-              value: /run/secrets/POSTGRES_USER
-            - name: POSTGRES_DB_FILE
-              value: /run/secrets/POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgvector.fullname" . }}-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgvector.fullname" . }}-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgvector.fullname" . }}-credentials
+                  key: POSTGRES_DB
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pgvector.fullname" . }}-credentials
+                  key: POSTGRES_PASSWORD
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
               subPath: pgdata
             - name: init-scripts
               mountPath: /docker-entrypoint-initdb.d
-            - name: postgres-secrets
-              mountPath: /run/secrets
-              readOnly: true
           livenessProbe:
             exec:
               command: [pg_isready, -U, postgres]
@@ -57,13 +66,18 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: init-scripts
           configMap:
             name: {{ include "pgvector.fullname" . }}-init
-        - name: postgres-secrets
-          secret:
-            secretName: {{ include "pgvector.fullname" . }}-credentials
   volumeClaimTemplates:
     - metadata:
         name: data
